@@ -15,6 +15,9 @@
 *wandb*
 *wandb_logs*
 outputs/*
+polymetis/polymetis/build/
+polymetis/polymetis/build_codex/
+polymetis/polymetis/src/clients/franka_panda_client/third_party/libfranka/build/
 
 # python
 *__pycache__

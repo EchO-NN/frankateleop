@@ -1,0 +1,12 @@
+gripper:
+  _target_: polymetis.robot_client.executable_robot_client.ExecutableRobotClient
+  use_real_time: false
+  executable_cfg:
+    exec: franka_hand_client
+    robot_ip: "172.16.0.2"
+    control_ip: ${ip}
+    control_port: ${port}
+    servo_mode: true
+    command_deadband: 0.002
+  metadata_cfg: 
+    _target_: polymetis.robot_client.metadata.EmptyRobotClientMetadata

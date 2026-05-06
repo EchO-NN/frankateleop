@@ -1,0 +1,25 @@
+{
+    "name": "libfranka",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "libfranka_project",
+    "workspaceFolder": "/workspaces",
+    "remoteUser": "user",
+    "initializeCommand": "bash -c 'ENV_FILE=\".devcontainer/.env\"; UBUNTU_VERSION=$(cat devcontainer_distro 2>/dev/null || echo 22.04); if [ ! -f \"$ENV_FILE\" ]; then echo -e \"UBUNTU_VERSION=${UBUNTU_VERSION}\\nUSER_UID=$(id -u)\\nUSER_GID=$(id -g)\" > \"$ENV_FILE\"; else sed -i.bak \"s/^UBUNTU_VERSION=.*/UBUNTU_VERSION=${UBUNTU_VERSION}/\" \"$ENV_FILE\"; sed -i.bak \"s/^USER_UID=.*/USER_UID=$(id -u)/\" \"$ENV_FILE\"; sed -i.bak \"s/^USER_GID=.*/USER_GID=$(id -g)/\" \"$ENV_FILE\"; rm -f \"$ENV_FILE.bak\"; fi'",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "tamasfe.even-better-toml",
+                "ms-vscode.cpptools",
+                "xaver.clang-format",
+                "twxs.cmake",
+                "cheshirekow.cmake-format",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": { "bash": { "path": "/bin/bash" } }
+            }
+        }
+    }
+}

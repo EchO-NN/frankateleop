@@ -1,0 +1,79 @@
+name: polymetis
+channels:
+  - pytorch
+  - fair-robotics
+  - aihabitat
+  - conda-forge
+  - defaults
+dependencies:
+  # Polymetis build dependencies
+  - assimp=5.0.1=hdca8b6f_4
+  - boost=1.72.0
+  - boost-cpp=1.72.0
+  - c-compiler
+  - cmake
+  - cpuonly
+  - cxx-compiler
+  - eigen=3.3.9
+  - grpc-cpp=1.41.1
+  - hpp-fcl=1.6.0=py38h75fc22a_1
+  - libprotobuf=3.18.1
+  - make
+  - mkl-include=2022.0.1
+  - openmpi=2.1.2
+  - pinocchio=2.5.2
+  - poco=1.9.0
+  - python=3.8
+  - pytorch=1.13.1
+  - spdlog=1.10.0=h924138e_0
+  - urdfdom=2.3.3=hc9558a2_0
+  - urdfdom_headers=1.0.5=hc9558a2_2
+  - yaml-cpp=0.6.3
+
+  # Polymetis runtime / tooling
+  - black
+  - dash
+  - grpcio=1.46.0
+  - habitat-sim=0.2.1=py3.8_bullet_linux_fc7fb11ccec407753a73ab810d1dbb5f57d0f9b9
+  - hydra-core=1.0.6
+  - importlib-resources=5.7.1
+  - mujoco
+  - numpy=1.23.5
+  - pandas
+  - pip
+  - plotly
+  - pybullet=3.17
+  - pymodbus=2.5.3
+  - pyserial
+  - pytest
+  - setuptools
+  - scipy
+  - tqdm
+  - wheel
+  - withbullet
+
+  # Teleop/GELLO runtime
+  - pillow
+  - pygame
+  - pyzmq
+  - termcolor
+  - tyro
+
+  # Packages not reliably available from the conda channels above.
+  - pip:
+      - dash_core_components==2.0.0
+      - dash_html_components==2.0.0
+      - dash_table==5.0.0
+      - dm_control
+      - numpy-quaternion
+      - protobuf==3.19.4
+      - pure-python-adb
+      - PyQt6
+      - pyquaternion
+      - pyrealsense2
+      - pyspacemouse
+      - quaternion
+      - ur-rtde
+      - xarm
+      - xarm-python-sdk
+      - zerorpc

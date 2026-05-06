@@ -5,7 +5,7 @@ from typing import Optional
 import numpy as np
 from teleop.robots.robot import Robot
 
-MAX_OPEN = 0.09
+MAX_OPEN = 0.08
 
 
 class fr3Robot(Robot):
@@ -30,15 +30,13 @@ class fr3Robot(Robot):
             ip_address=robot_ip,
             port=frankahand_port,
         )
-        if joint_positions_desired is None:
-            self.robot.go_home()
-        
-        else:
+        self.joint_positions_desired = None
+        if joint_positions_desired is not None:
             if joint_positions_desired.shape != (7,):
                 raise ValueError(f"Franka requires 7 joints params, current input is: {joint_positions_desired.shape}")
-            print("init robot")
+            # Only keep the requested startup pose for reference; do not move the arm
+            # during server initialization.
             self.joint_positions_desired = joint_positions_desired
-            self.robot.move_to_joint_positions(self.joint_positions_desired)
             
         self.robot.start_joint_impedance()
         self.gripper.goto(width=MAX_OPEN, speed=255, force=255)
@@ -60,7 +58,8 @@ class fr3Robot(Robot):
         """
         robot_joints = self.robot.get_joint_positions()
         gripper_pos = self.gripper.get_state()
-        pos = np.append(robot_joints, gripper_pos.width / MAX_OPEN)
+        # Match the teleop hand convention: 0=open, 1=closed.
+        pos = np.append(robot_joints, 1 - gripper_pos.width / MAX_OPEN)
         return pos
 
     def command_joint_state(self, joint_state: np.ndarray) -> None:
@@ -72,7 +71,12 @@ class fr3Robot(Robot):
         import torch
 
         self.robot.update_desired_joint_positions(torch.tensor(joint_state[:-1]))
-        self.gripper.goto(width=(MAX_OPEN * (1 - joint_state[-1])), speed=1, force=1)
+        self.gripper.goto(
+            width=(MAX_OPEN * (1 - joint_state[-1])),
+            speed=1,
+            force=1,
+            blocking=False,
+        )
 
     def get_observations(self) -> Dict[str, np.ndarray]:
         joints = self.get_joint_state()
@@ -105,4 +109,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -41,6 +41,7 @@ class Args:
     data_dir: str = "~/bc_data"
     bimanual: bool = False
     verbose: bool = False
+    reset_on_start: bool = False
 
 
 def main(args):
@@ -97,11 +98,12 @@ def main(args):
         reset_joints_right = np.deg2rad([0, -90, 90, -90, -90, 0, 0])
         reset_joints = np.concatenate([reset_joints_left, reset_joints_right])
         curr_joints = env.get_obs()["joint_positions"]
-        max_delta = (np.abs(curr_joints - reset_joints)).max()
-        steps = min(int(max_delta / 0.01), 100)
+        if args.reset_on_start:
+            max_delta = (np.abs(curr_joints - reset_joints)).max()
+            steps = min(int(max_delta / 0.01), 100)
 
-        for jnt in np.linspace(curr_joints, reset_joints, steps):
-            env.step(jnt)
+            for jnt in np.linspace(curr_joints, reset_joints, steps):
+                env.step(jnt)
     else:
         if args.agent == "teleop":
             teleop_port = args.teleop_port
@@ -125,7 +127,15 @@ def main(args):
             agent = TeleopAgent(port=teleop_port, start_joints=args.start_joints)
             curr_joints = env.get_obs()["joint_positions"]
             curr_joints = np.array(curr_joints)
-            if reset_joints.shape == curr_joints.shape:
+
+            # Some envs append a gripper dimension to the 7-DoF arm joints.
+            # Reuse the leader's current gripper command so we can still drive
+            # the robot to the standard arm reset pose before teleop starts.
+            if reset_joints.shape[0] + 1 == curr_joints.shape[0]:
+                leader_joints = np.array(agent.act({"joint_positions": curr_joints}))
+                reset_joints = np.concatenate([reset_joints, leader_joints[-1:]])
+
+            if args.reset_on_start and reset_joints.shape == curr_joints.shape:
                 max_delta = (np.abs(curr_joints - reset_joints)).max()
                 steps = min(int(max_delta / 0.01), 100)
 
@@ -193,14 +203,15 @@ def main(args):
     obs = env.get_obs()
     joints = obs["joint_positions"]
     action = agent.act(obs)
-    if (action - joints > 0.5).any():
+    action_delta = action - joints
+    max_action_delta = 0.5
+    if (np.abs(action_delta) > max_action_delta).any():
         print("Action is too big")
 
-        # print which joints are too big
-        joint_index = np.where(action - joints > 0.8)
+        joint_index = np.where(np.abs(action_delta) > max_action_delta)[0]
         for j in joint_index:
             print(
-                f"Joint [{j}], leader: {action[j]}, follower: {joints[j]}, diff: {action[j] - joints[j]}"
+                f"Joint [{j}], leader: {action[j]:.3f}, follower: {joints[j]:.3f}, diff: {action_delta[j]:.3f}"
             )
         exit()
 

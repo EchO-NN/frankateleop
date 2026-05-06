@@ -1,0 +1,95 @@
+name: Generate Doxygen Documentation for libfranka
+
+on:
+  push:
+    tags:
+      - '*'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  doxygen:
+    runs-on: ubuntu-latest
+
+    env:
+      DOC_BASE: build/doc/docs
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          set -e
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz cmake
+
+      - name: Determine documentation tag
+        id: doc_tag
+        run: |
+          set -e
+
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
+            echo "TAG_NAME=latest" >> $GITHUB_OUTPUT
+          else
+            echo "Unsupported ref: $GITHUB_REF" >&2
+            exit 1
+          fi
+
+      - name: Build documentation
+        run: |
+          set -e
+
+          TAG_NAME="${{ steps.doc_tag.outputs.TAG_NAME }}"
+          DOC_DIR="${DOC_BASE}/$TAG_NAME"
+
+          echo "Using documentation tag: $TAG_NAME"
+
+          # Clean latest deployment if rebuilding latest
+          if [[ "$TAG_NAME" == "latest" ]]; then
+            rm -rf "$DOC_DIR"
+          fi
+
+          mkdir -p "$DOC_DIR"
+
+          cd build || exit 1
+
+          cmake -D BUILD_DOCUMENTATION=ON -D SKIP_CXX_BUILD=ON ..
+          make doc
+
+      - name: Normalize HTML structure
+        run: |
+          set -e
+
+          TAG_NAME="${{ steps.doc_tag.outputs.TAG_NAME }}"
+          DOC_DIR="${DOC_BASE}/$TAG_NAME"
+          SRC="${DOC_DIR}/html"
+
+          if [[ -d "$SRC" ]]; then
+            mv "$SRC"/* "$DOC_DIR"/
+            rm -rf "$SRC"
+          else
+            echo "HTML directory not found — skipping"
+          fi
+
+      - name: Create redirect index
+        run: |
+          TAG_NAME="${{ steps.doc_tag.outputs.TAG_NAME }}"
+
+          URL="https://frankarobotics.github.io/libfranka/${TAG_NAME}/"
+
+          echo "<html><head><meta http-equiv=\"refresh\" content=\"0; url=$URL\"></head></html>" \
+            > "${DOC_BASE}/index.html"
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ${{ env.DOC_BASE }}
+          keep_files: true

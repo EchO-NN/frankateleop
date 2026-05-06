@@ -20,5 +20,5 @@ if [[ ! -f "$SCRIPT_PATH" ]]; then
 fi
 
 echo ">>> 启动Gripper 客户端 ..."
-python3 "$SCRIPT_PATH" --agent=teleop
+python3 "$SCRIPT_PATH" --agent=teleop 
 #如果要启用采集数据，需要在后面增加“--use_save_interface”
