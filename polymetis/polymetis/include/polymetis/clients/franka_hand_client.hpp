@@ -8,7 +8,7 @@
 #include <franka/gripper.h>
 #include <franka/gripper_state.h>
 
-#define GRIPPER_HZ 30
+#define GRIPPER_HZ 100
 
 // Define tolerances to be able to grasp any object without specifying width
 #define EPSILON_INNER 0.2
@@ -28,6 +28,7 @@ private:
   int prev_cmd_timestamp_ns_ = 0;
   std::atomic<bool> prev_cmd_successful_{true};
   bool servo_mode_ = false;
+  bool poll_state_ = true;
   double command_deadband_ = 0.045;
 
   // Franka

@@ -18,6 +18,10 @@ dependencies:
   - grpc-cpp=1.41.1
   - hpp-fcl=1.6.0=py38h75fc22a_1
   - libprotobuf=3.18.1
+  - libxcrypt
+  - pybind11
+  - ninja
+  - pkg-config
   - make
   - mkl-include=2022.0.1
   - openmpi=2.1.2
@@ -29,6 +33,7 @@ dependencies:
   - urdfdom=2.3.3=hc9558a2_0
   - urdfdom_headers=1.0.5=hc9558a2_2
   - yaml-cpp=0.6.3
+  - fmt
 
   # Polymetis runtime / tooling
   - black

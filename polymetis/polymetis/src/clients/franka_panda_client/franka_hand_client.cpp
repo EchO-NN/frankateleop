@@ -1,6 +1,7 @@
 #include "polymetis/clients/franka_hand_client.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include "spdlog/spdlog.h"
@@ -14,6 +15,13 @@
 #include "polymetis/utils.h"
 
 using grpc::ClientContext;
+
+namespace {
+double nowSeconds() {
+  using clock = std::chrono::system_clock;
+  return std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+}
+}  // namespace
 
 FrankaHandClient::FrankaHandClient(std::shared_ptr<grpc::Channel> channel,
                                    YAML::Node config)
@@ -33,8 +41,9 @@ FrankaHandClient::FrankaHandClient(std::shared_ptr<grpc::Channel> channel,
       config["command_deadband"]
           ? config["command_deadband"].as<double>()
           : (servo_mode_ ? 0.002 : 0.045);
-  spdlog::info("Franka hand servo_mode={}, command_deadband={} m",
-               servo_mode_, command_deadband_);
+  poll_state_ = !config["poll_state"] || config["poll_state"].as<bool>();
+  spdlog::info("Franka hand servo_mode={}, command_deadband={} m, poll_state={}",
+               servo_mode_, command_deadband_, poll_state_);
 
   // Initialize server connection
   franka::GripperState franka_gripper_state = gripper_->readOnce();
@@ -42,6 +51,11 @@ FrankaHandClient::FrankaHandClient(std::shared_ptr<grpc::Channel> channel,
   GripperMetadata metadata;
   metadata.set_max_width(franka_gripper_state.max_width);
   metadata.set_hz(GRIPPER_HZ);
+  gripper_state_.set_width(franka_gripper_state.width);
+  gripper_state_.set_is_grasped(franka_gripper_state.is_grasped);
+  gripper_state_.set_is_moving(false);
+  gripper_state_.set_prev_command_successful(true);
+  setTimestampToNow(gripper_state_.mutable_timestamp());
 
   ClientContext context;
   Empty empty;
@@ -68,19 +82,23 @@ void FrankaHandClient::applyGripperCommand(GripperCommand gripper_cmd) {
 
   try {
     if (gripper_cmd.grasp()) {
-      spdlog::info("Grasping at width {} at speed={}", gripper_cmd.width(),
-                   gripper_cmd.speed());
+      spdlog::info("[HAND_MOVE_CALL] t={:.6f} grasp width={} speed={}",
+                   nowSeconds(), gripper_cmd.width(), gripper_cmd.speed());
       double eps_inner = 0.1;
       double eps_outer = 0.1;
       prev_cmd_successful_.store(
           gripper_->grasp(gripper_cmd.width(), gripper_cmd.speed(),
                           gripper_cmd.force(), eps_inner, eps_outer));
+      spdlog::info("[HAND_MOVE_RETURN] t={:.6f} grasp width={}",
+                   nowSeconds(), gripper_cmd.width());
 
     } else {
-      spdlog::info("Moving to width {} at speed={}", gripper_cmd.width(),
-                   gripper_cmd.speed());
+      spdlog::info("[HAND_MOVE_CALL] t={:.6f} move width={} speed={}",
+                   nowSeconds(), gripper_cmd.width(), gripper_cmd.speed());
       prev_cmd_successful_.store(
           gripper_->move(gripper_cmd.width(), gripper_cmd.speed()));
+      spdlog::info("[HAND_MOVE_RETURN] t={:.6f} move width={}",
+                   nowSeconds(), gripper_cmd.width());
     }
   } catch (const std::exception &e) {
     if (stop_requested_.load()) {
@@ -107,11 +125,17 @@ void FrankaHandClient::run(void) {
   clock_gettime(CLOCK_REALTIME, &abs_target_time);
   while (true) {
     // Run control step
-    try {
-      getGripperState();
-    } catch (const std::exception &e) {
-      spdlog::warn("Failed to read gripper state: {}", e.what());
-      prev_cmd_successful_.store(false);
+    if (poll_state_) {
+      try {
+        getGripperState();
+      } catch (const std::exception &e) {
+        spdlog::warn("Failed to read gripper state: {}", e.what());
+        prev_cmd_successful_.store(false);
+      }
+    } else {
+      gripper_state_.set_is_moving(is_moving_.load());
+      gripper_state_.set_prev_command_successful(prev_cmd_successful_.load());
+      setTimestampToNow(gripper_state_.mutable_timestamp());
     }
 
     grpc::ClientContext context;
@@ -127,18 +151,25 @@ void FrankaHandClient::run(void) {
                              command_deadband_;
 
     if (is_new_command && width_changed) {
+      spdlog::info(
+          "[HAND_CMD_RECV] t={:.6f} width={} is_moving={} prev_width={}",
+          nowSeconds(), cmd_width, is_moving_.load(), prev_cmd_width);
       if (is_moving_.load()) {
         if (servo_mode_ && !stop_requested_.exchange(true)) {
-          spdlog::debug("Preempting active gripper move for servo target {}",
-                        cmd_width);
+          spdlog::info("[HAND_STOP_CALL] t={:.6f} target_width={}",
+                       nowSeconds(), cmd_width);
           try {
             gripper_->stop();
+            spdlog::info("[HAND_STOP_RETURN] t={:.6f} target_width={}",
+                         nowSeconds(), cmd_width);
           } catch (const std::exception &e) {
             spdlog::warn("Failed to stop active gripper move: {}", e.what());
           }
         }
       } else {
         GripperCommand command = gripper_cmd_;
+        gripper_state_.set_width(command.width());
+        gripper_state_.set_is_grasped(false);
         std::thread th(&FrankaHandClient::applyGripperCommand, this, command);
         th.detach();
         prev_cmd_timestamp_ns_ = timestamp_ns;

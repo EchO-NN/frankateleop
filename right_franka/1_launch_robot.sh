@@ -15,17 +15,17 @@ if ! command -v lsof &> /dev/null; then
 fi
 
 echo "🔍 正在查找占用50051端口的进程..."
-PID=$(sudo lsof -t -i:50051 || true)
-echo "📝 调试信息：查找到的PID=$PID"
+PIDS=$(sudo lsof -t -iTCP:50051 -sTCP:LISTEN || true)
+echo "📝 调试信息：查找到的PID=$PIDS"
 
-if [[ -n "$PID" ]]; then
-    echo "发现占用50051端口的进程，PID: $PID，正在终止..."
-    if sudo kill -9 "$PID"; then
-        echo "✅ 进程$PID已成功终止"
-    else
-        echo "❌ 终止进程$PID失败"
-        exit 1
-    fi
+if [[ -n "$PIDS" ]]; then
+    echo "发现占用50051端口的进程，正在逐个终止..."
+    while IFS= read -r PID; do
+        [[ -z "$PID" ]] && continue
+        echo "正在终止 PID: $PID"
+        sudo kill -9 "$PID" 2>/dev/null || echo "⚠️ PID $PID 已退出或终止失败，继续处理"
+    done <<< "$PIDS"
+    echo "✅ 端口50051相关进程已处理完成"
 else
     echo "⚠️ 未发现占用50051端口的进程，无需清理"
 fi
@@ -49,4 +49,3 @@ cd "$WORK_DIR" || { echo "❌ 无法进入工作目录 $WORK_DIR"; exit 1; }
 echo "📝 调试信息：当前工作目录=$(pwd)"
 
 launch_robot.py --config-name=launch_right_robot
-

@@ -6,6 +6,10 @@ import numpy as np
 from teleop.robots.robot import Robot
 
 MAX_OPEN = 0.08
+GRIPPER_CLOSED_WIDTH = 0.005  # 不要给 0，否则 libfranka 会跑完整个 Unsuccessful 超时
+GRIPPER_SWITCH_THRESHOLD = 0.5
+GRIPPER_SPEED = 0.1
+GRIPPER_FORCE = 40.0
 
 
 class fr3Robot(Robot):
@@ -30,6 +34,7 @@ class fr3Robot(Robot):
             ip_address=robot_ip,
             port=frankahand_port,
         )
+        self._last_gripper_command_closed = None
         self.joint_positions_desired = None
         if joint_positions_desired is not None:
             if joint_positions_desired.shape != (7,):
@@ -39,7 +44,8 @@ class fr3Robot(Robot):
             self.joint_positions_desired = joint_positions_desired
             
         self.robot.start_joint_impedance()
-        self.gripper.goto(width=MAX_OPEN, speed=255, force=255)
+        self.gripper.goto(width=MAX_OPEN, speed=GRIPPER_SPEED, force=GRIPPER_FORCE)
+        self._last_gripper_command_closed = False
         time.sleep(1)
 
     def num_dofs(self) -> int:
@@ -59,7 +65,8 @@ class fr3Robot(Robot):
         robot_joints = self.robot.get_joint_positions()
         gripper_pos = self.gripper.get_state()
         # Match the teleop hand convention: 0=open, 1=closed.
-        pos = np.append(robot_joints, 1 - gripper_pos.width / MAX_OPEN)
+        gripper_closed = np.clip(1 - gripper_pos.width / MAX_OPEN, 0.0, 1.0)
+        pos = np.append(robot_joints, gripper_closed)
         return pos
 
     def command_joint_state(self, joint_state: np.ndarray) -> None:
@@ -71,12 +78,34 @@ class fr3Robot(Robot):
         import torch
 
         self.robot.update_desired_joint_positions(torch.tensor(joint_state[:-1]))
-        self.gripper.goto(
-            width=(MAX_OPEN * (1 - joint_state[-1])),
-            speed=1,
-            force=1,
-            blocking=False,
+        gripper_command_closed = joint_state[-1] >= GRIPPER_SWITCH_THRESHOLD
+        if gripper_command_closed == self._last_gripper_command_closed:
+            return
+
+        width = GRIPPER_CLOSED_WIDTH if gripper_command_closed else MAX_OPEN
+        print(
+            f"[FR3_GRIPPER_CMD] t={time.time():.6f} "
+            f"closed={gripper_command_closed} width={width:.3f}",
+            flush=True,
         )
+        if gripper_command_closed:
+            # 闭合用 grasp，达到容差/抓到物体后会持续保持夹紧力
+            self.gripper.grasp(
+                speed=GRIPPER_SPEED,
+                force=GRIPPER_FORCE,
+                grasp_width=GRIPPER_CLOSED_WIDTH,
+                epsilon_inner=MAX_OPEN,
+                epsilon_outer=MAX_OPEN,
+                blocking=False,
+            )
+        else:
+            self.gripper.goto(
+                width=width,
+                speed=GRIPPER_SPEED,
+                force=GRIPPER_FORCE,
+                blocking=False,
+            )
+        self._last_gripper_command_closed = gripper_command_closed
 
     def get_observations(self) -> Dict[str, np.ndarray]:
         joints = self.get_joint_state()

@@ -15,6 +15,29 @@ from teleop.env import RobotEnv
 from teleop.robots.robot import PrintRobot
 from teleop.zmq_core.robot_node import ZMQClientRobot
 
+# Reset-on-start: smaller rad per interpolation step => more steps => slower motion.
+# Defaults were 0.01 rad and 100 steps; halving step size ≈ half reset speed.
+_RESET_TRAVEL_STEP_RAD = 0.005
+_RESET_TRAVEL_MAX_STEPS = 200
+
+
+def _command_gripper_open_after_reset(env: RobotEnv) -> None:
+    """Open gripper(s) after arm reset. fr3: commanded last dim 0=open, 1=closed."""
+    obs = env.get_obs()
+    q = np.asarray(obs["joint_positions"], dtype=np.float64).copy()
+    n = int(q.shape[0])
+    if n == 8:
+        q[-1] = 0.0
+    elif n == 16:
+        q[7] = 0.0
+        q[15] = 0.0
+    elif n >= 8 and n % 8 == 0:
+        for i in range(7, n, 8):
+            q[i] = 0.0
+    else:
+        return
+    env.step(q)
+
 
 def print_color(*args, color=None, attrs=(), **kwargs):
     import termcolor
@@ -41,7 +64,7 @@ class Args:
     data_dir: str = "~/bc_data"
     bimanual: bool = False
     verbose: bool = False
-    reset_on_start: bool = False
+    reset_on_start: bool = True
 
 
 def main(args):
@@ -95,15 +118,30 @@ def main(args):
         # System setup specific. This reset configuration works well on our setup. If you are mounting the robot
         # differently, you need a separate reset joint configuration.
         reset_joints_left = np.deg2rad([0, -90, -90, -90, 90, 0, 0])
-        reset_joints_right = np.deg2rad([0, -90, 90, -90, -90, 0, 0])
+        # Right arm home (7 DoF, rad) — snapshot from read_joint_positions / follower state.
+        reset_joints_right = np.array(
+            [
+                -0.11559626,
+                0.0642503,
+                0.11347504,
+                -1.46301174,
+                -0.00683021,
+                1.47942591,
+                0.71888214,
+            ],
+            dtype=np.float64,
+        )
         reset_joints = np.concatenate([reset_joints_left, reset_joints_right])
         curr_joints = env.get_obs()["joint_positions"]
         if args.reset_on_start:
             max_delta = (np.abs(curr_joints - reset_joints)).max()
-            steps = min(int(max_delta / 0.01), 100)
+            steps = min(
+                int(max_delta / _RESET_TRAVEL_STEP_RAD), _RESET_TRAVEL_MAX_STEPS
+            )
 
             for jnt in np.linspace(curr_joints, reset_joints, steps):
                 env.step(jnt)
+            _command_gripper_open_after_reset(env)
     else:
         if args.agent == "teleop":
             teleop_port = args.teleop_port
@@ -118,9 +156,19 @@ def main(args):
                         "No teleop port found, please specify one or plug in teleop"
                     )
             if args.start_joints is None:
-                reset_joints = np.deg2rad(
-                    [0, -90, 90, -90, -90, 0, 0]
-                )  # Change this to your own reset joints
+                # Default right-arm reset pose (rad); use --start-joints for left / other mounts.
+                reset_joints = np.array(
+                    [
+                        -0.11559626,
+                        0.0642503,
+                        0.11347504,
+                        -1.46301174,
+                        -0.00683021,
+                        1.47942591,
+                        0.71888214,
+                    ],
+                    dtype=np.float64,
+                )
             else:
                 reset_joints = args.start_joints
                 reset_joints = np.array(reset_joints)
@@ -137,11 +185,14 @@ def main(args):
 
             if args.reset_on_start and reset_joints.shape == curr_joints.shape:
                 max_delta = (np.abs(curr_joints - reset_joints)).max()
-                steps = min(int(max_delta / 0.01), 100)
+                steps = min(
+                    int(max_delta / _RESET_TRAVEL_STEP_RAD), _RESET_TRAVEL_MAX_STEPS
+                )
 
                 for jnt in np.linspace(curr_joints, reset_joints, steps):
                     env.step(jnt)
                     time.sleep(0.001)
+                _command_gripper_open_after_reset(env)
         elif args.agent == "quest":
             from teleop.agents.quest_agent import SingleArmQuestAgent
 

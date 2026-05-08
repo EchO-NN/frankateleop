@@ -66,7 +66,7 @@ git clone https://github.com/frankaemika/libfranka \
 cd frankateleop/polymetis
 ./scripts/build_libfranka.sh
 
-cd polymetis
+cd polymetis  #frankateleop/polymetis/polimetis
 rm -rf build
 mkdir build
 cd build

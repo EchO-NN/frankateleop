@@ -21,13 +21,18 @@ else:
     original_cwd = os.getcwd()
     os.chdir(os.path.dirname(polymetis.__file__))
 
-    # Git describe output
-    stream = os.popen("git describe --tags")
-    version_string = [line for line in stream][0]
-
-    # Modify to same format as conda env variable GIT_DESCRIBE_NUMBER
-    version_items = version_string.strip("\n").split("-")
-    __version__ = f"{version_items[-2]}_{version_items[-1]}"
+    # Git describe output (fallback-safe when no tag is present)
+    stream = os.popen("git describe --tags --always 2>/dev/null")
+    version_lines = [line.strip("\n") for line in stream if line.strip("\n")]
+    if version_lines:
+        version_string = version_lines[0]
+        # Common tagged format: v0.1-12-gabc1234 -> 12_gabc1234
+        version_items = version_string.split("-")
+        if len(version_items) >= 3:
+            __version__ = f"{version_items[-2]}_{version_items[-1]}"
+        else:
+            # Untagged repo may return only commit hash, keep it valid and non-empty
+            __version__ = version_string
 
     # Reset cwd
     os.chdir(original_cwd)
