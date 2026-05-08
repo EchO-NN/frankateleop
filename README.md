@@ -1,27 +1,33 @@
 # Franka Teleop
 
-这是一个基于 GELLO/teleop + Polymetis 的 Franka FR3 遥操作项目。当前运行链路不依赖 ROS2，也不依赖 `franky`；真实机械臂控制走的是：
+Franka Teleop is a GELLO/teleop + Polymetis based single-arm teleoperation stack for a Franka FR3 robot.
+
+The current runtime path does not depend on ROS 2 or `franky`. Real robot control flows through:
 
 ```text
-teleop/GELLO -> Polymetis RobotInterface/GripperInterface -> franka C++ client -> libfranka -> FR3
+teleop/GELLO -> Polymetis RobotInterface/GripperInterface -> Franka C++ client -> libfranka -> FR3
 ```
 
-## 目录结构
+## Repository Layout
 
 ```text
 frankateleop/
-  environment.mamba.yml      # mamba/conda 环境定义
-  MAMBA_SETUP.md             # 更详细的环境构建说明
-  left_franka/               # 左臂启动脚本
-  right_franka/              # 右臂启动脚本
-  polymetis/                 # Polymetis 控制层，包含 Franka C++ client
-  teleop/                    # GELLO/teleop Python 逻辑
-  scripts/                   # 通用辅助脚本
+  environment.mamba.yml      # mamba/conda environment definition
+  MAMBA_SETUP.md             # detailed environment setup notes
+  right_franka/              # supported single-arm launch scripts
+  1_launch_robot.sh          # legacy root-level script; not the recommended entrypoint
+  2_launch_gripper.sh        # legacy root-level script; not the recommended entrypoint
+  3_launch_node.sh           # legacy root-level script; not the recommended entrypoint
+  4_run_env.sh               # legacy root-level script; not the recommended entrypoint
+  left_franka/               # legacy left-arm scripts; not used by this single-arm setup
+  polymetis/                 # Polymetis control layer and Franka C++ client
+  teleop/                    # GELLO/teleop Python code
+  scripts/                   # helper scripts
 ```
 
-## 环境构建
+## Environment Setup
 
-推荐使用 mamba。环境名保持为 `polymetis`，因为启动脚本里写的是 `conda activate polymetis`。
+Use `mamba` if possible. The environment name should stay `polymetis` because the launch scripts call `conda activate polymetis`.
 
 ```bash
 cd frankateleop
@@ -29,14 +35,14 @@ mamba env create -f environment.mamba.yml
 mamba activate polymetis
 ```
 
-如果环境已经存在：
+If the environment already exists:
 
 ```bash
 mamba env update -n polymetis -f environment.mamba.yml --prune
 mamba activate polymetis
 ```
 
-安装本地 Python 包：
+Install the local Python packages:
 
 ```bash
 pip install -e teleop
@@ -44,29 +50,32 @@ pip install -e teleop/third_party/DynamixelSDK/python
 pip install -e polymetis/polymetis
 ```
 
-更多细节见 [MAMBA_SETUP.md](MAMBA_SETUP.md)。
+See [MAMBA_SETUP.md](MAMBA_SETUP.md) for more detailed setup notes.
 
-## 编译 Polymetis / libfranka
+## Build Polymetis and libfranka
 
-真实 FR3 需要 Polymetis 的 C++ client 和 `libfranka`。
-`libfranka` 应该放在 Polymetis 默认查找的位置：
+Real FR3 control requires the Polymetis C++ clients and `libfranka`.
+
+Polymetis expects `libfranka` at:
 
 ```text
 polymetis/polymetis/src/clients/franka_panda_client/third_party/libfranka
 ```
 
-如果这个目录不存在，可以直接克隆进去：
+If the directory does not exist, clone `libfranka` there:
 
 ```bash
 git clone https://github.com/frankaemika/libfranka \
   polymetis/polymetis/src/clients/franka_panda_client/third_party/libfranka
 ```
 
+Build `libfranka` and Polymetis:
+
 ```bash
 cd frankateleop/polymetis
 ./scripts/build_libfranka.sh
 
-cd polymetis  #frankateleop/polymetis/polimetis
+cd polymetis
 rm -rf build
 mkdir build
 cd build
@@ -79,86 +88,112 @@ cmake .. \
 make -j"$(nproc)"
 ```
 
-如果 `libfranka` 放在项目外部，编译时指定：
+If `libfranka` is outside this repository, pass its CMake package path:
 
 ```bash
 -DFranka_DIR=/absolute/path/to/libfranka/build
 ```
 
-## 启动左臂
+## Launch the Single Arm
 
-建议 4 个终端按顺序启动：
+This repository uses the `right_franka/` configuration as the single supported runtime path. The root-level scripts and `left_franka/` scripts are kept only as legacy/reference files.
+
+Use four terminals and start the scripts in order:
 
 ```bash
-cd frankateleop/left_franka
+cd frankateleop/right_franka
 ./1_launch_robot.sh
 ```
 
 ```bash
-cd frankateleop/left_franka
+cd frankateleop/right_franka
 ./2_launch_gripper.sh
 ```
 
 ```bash
-cd frankateleop/left_franka
+cd frankateleop/right_franka
 ./3_launch_node.sh
 ```
 
 ```bash
-cd frankateleop/left_franka
+cd frankateleop/right_franka
 ./4_run_env.sh
 ```
 
-右臂同理使用 `right_franka/` 下的脚本。
+To enable data collection, add `--use_save_interface` to the `run_env.py` command in `right_franka/4_run_env.sh`.
 
-## 运行前检查
+The supported single-arm scripts use these defaults:
 
-确认 Python 包可导入：
+| Target | Robot server | Gripper server | Teleop server | Robot config |
+| --- | ---: | ---: | ---: | --- |
+| Single arm, `right_franka/` | 50051 | 50053 | 6001 | `launch_right_robot` |
+
+The `robot_ip` argument in `3_launch_node.sh` is the IP address of the machine running the Polymetis robot and gripper servers. If everything runs on the same machine, `127.0.0.1` is correct.
+
+## Network and Robot Configuration
+
+Common FR3 network settings used by this repository:
+
+- Control PC interface connected to Franka Control: `172.16.0.1/24`
+- Robot IP: `172.16.0.2`
+- Robot server: `50051`
+- Gripper server: `50053`
+- Teleop server: `6001`
+
+Most of these values are configured in:
+
+```text
+polymetis/polymetis/python/polymetis/conf/
+right_franka/
+```
+
+## Pre-Run Checks
+
+Confirm that the Python packages import correctly:
 
 ```bash
 conda activate polymetis
 python -c "import polymetis, teleop; print('ok')"
 ```
 
-确认 Franka client 的动态库都能找到：
+Confirm that the Franka client binaries can find their shared libraries:
 
 ```bash
 ldd polymetis/polymetis/build/franka_panda_client | grep "not found" || true
 ldd polymetis/polymetis/build/franka_hand_client | grep "not found" || true
 ```
 
-真实机器人建议使用实时内核：
+For real robot control, use a real-time kernel:
 
 ```bash
 uname -a
 cat /sys/kernel/realtime
 ```
 
-期望 `uname -a` 里包含 `PREEMPT_RT`，并且 `/sys/kernel/realtime` 输出 `1`。
+Expected result:
 
-## 网络与端口
+- `uname -a` includes `PREEMPT_RT`
+- `/sys/kernel/realtime` prints `1`
 
-常用配置：
+## Troubleshooting
 
-- 控制机连接 Franka Control 的网口：`172.16.0.1/24`
-- 默认/右臂机器人 IP：`172.16.0.2`
-- 左臂机器人 IP：`172.16.0.3`
-- 左臂 robot server：`50052`
-- 左臂 gripper server：`50054`
-- 左臂 teleop server：`6002`
-
-这些值主要在 `polymetis/polymetis/python/polymetis/conf/` 和 `left_franka/`、`right_franka/` 的启动脚本中配置。
-
-## 常见问题
-
-如果 `launch_robot.py` 或 `launch_gripper.py` 找不到：
+If `launch_robot.py` or `launch_gripper.py` cannot be found:
 
 ```bash
 conda activate polymetis
 pip install -e polymetis/polymetis
 which launch_robot.py
+which launch_gripper.py
 ```
 
-如果 `ldd` 显示 `libfranka.so` 或 conda 动态库 `not found`，通常需要重新编译 Polymetis，并确保 CMake 指向当前机器上的 `libfranka/build`。
+If `ldd` reports `libfranka.so` or conda shared libraries as `not found`, rebuild Polymetis and make sure CMake points to the `libfranka/build` directory on the current machine.
 
-如果真实机器人报 `communication_constraints_violation`，优先检查实时内核、CPU 频率缩放、网线直连和机器人网络配置。
+If the real robot reports `communication_constraints_violation`, first check:
+
+- Real-time kernel is enabled
+- CPU frequency scaling is not causing latency spikes
+- The robot is connected directly through the expected network interface
+- Franka Control network settings match the configured robot IP
+- No stale robot or gripper server is still listening on the configured ports
+
+The launch scripts clean common occupied ports automatically, but they may require `sudo` and `lsof`.
